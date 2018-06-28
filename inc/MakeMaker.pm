@@ -14,6 +14,7 @@ use warnings;
 use Config;
 use Getopt::Long;
 use File::Basename qw(basename dirname);
+use File::Spec::Functions qw(rel2abs);
 
 use Devel::CheckLib;
 
@@ -260,6 +261,7 @@ if ($Config{usethreads} && !$is_sunpro) {
 
 my @deps = glob 'deps/libgit2/deps/{http-parser,zlib}/*.c';
 my @srcs = glob 'deps/libgit2/src/{*.c,transports/*.c,xdiff/*.c,streams/*.c}';
+my @incs = ('.', 'deps/libgit2', 'deps/libgit2/src', 'deps/libgit2/include', 'deps/libgit2/deps/http-parser', 'deps/libgit2/deps/zlib');
 
 if ($is_msvc) {
 	push @srcs, 'deps/libgit2/src/hash/hash_win32.c';
@@ -271,7 +273,7 @@ elsif (!$library_opts{'ssl'}{'use'} && !$is_osx) {
 # the system regex is broken on Solaris, not available on Windows
 if ($is_windows || $is_solaris) {
 	push @srcs, 'deps/libgit2/deps/regex/regex.c';
-	$inc .= ' -Ideps/libgit2/deps/regex';
+	push @incs, 'deps/libgit2/deps/regex';
 }
 
 if ($is_windows) {
@@ -296,6 +298,15 @@ if ($is_linux || $is_solaris || $is_gkfreebsd) {
 	$lib .= ' -lrt';
 }
 
+# absolute to relative conversion (UNIX)
+my $transform = $is_windows ? sub { shift } : \&rel2abs;
+@srcs = map { $transform->($_) } @srcs;
+@deps = map { $transform->($_) } @deps;
+foreach my $i (@incs)
+{
+	$inc .= ' -I'.$transform->($i);
+}
+
 my @objs = map { substr ($_, 0, -1) . 'o' } (@deps, @srcs);
 
 sub MY::c_o {
@@ -308,15 +319,10 @@ sub MY::c_o {
 	my $line = qq{
 .c\$(OBJ_EXT):
 	\$(CCCMD) \$(CCCDLFLAGS) "-I\$(PERL_INC)" \$(PASTHRU_DEFINE) \$(DEFINE) \$*.c $out_switch\$@
+
+Raw$(OBJ_EXT) :: @objs
 };
 
-	if ($is_gcc) {
-		# disable parallel builds
-		$line .= qq{
-
-.NOTPARALLEL:
-};
-	}
 	return $line;
 }
 
@@ -562,7 +568,7 @@ TEMPLATE
 override _build_WriteMakefile_args => sub {
 	return +{
 		%{ super() },
-		INC	    => '-I. -Ideps/libgit2 -Ideps/libgit2/src -Ideps/libgit2/include -Ideps/libgit2/deps/http-parser -Ideps/libgit2/deps/zlib',
+		#INC	    => '-I. -Ideps/libgit2 -Ideps/libgit2/src -Ideps/libgit2/include -Ideps/libgit2/deps/http-parser -Ideps/libgit2/deps/zlib',
 		OBJECT	=> '$(O_FILES)',
 	}
 };
